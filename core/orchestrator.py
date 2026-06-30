@@ -52,6 +52,119 @@ class Orchestrator:
     def analyze_paper(self, text):
         return self.analysis_agent.analyze(text)
 
+    # --- Autonomous research pipeline ---
+    def run_pipeline(self, pdf_path, source_name, on_step=None,
+                     autonomous=True, max_similar=5):
+        """
+        Run the whole research workflow end-to-end after an upload, with NO
+        further prompts from the user:
+          ingest -> metadata -> deep analysis -> summary -> (save) ->
+          research gaps -> find similar papers -> literature review ->
+          compiled final report.
+
+        `on_step(label)` is an optional callback so the UI can show live agent
+        status. Returns a dict with every result. When `autonomous` is False,
+        only the core per-paper steps run (the rest are skipped).
+        """
+        def step(label):
+            if on_step:
+                on_step(label)
+
+        step("🟢 ReaderAgent → extracting text & indexing chunks")
+        n_chunks, text, stats = self.ingest_paper(pdf_path, source_name)
+
+        step("🟢 MetadataAgent → title, authors, year, DOI")
+        meta = self.extract_metadata(text)
+
+        step("🟢 AnalysisAgent → objectives, methods, results, limitations")
+        analysis = self.analyze_paper(text)
+
+        step("🟢 SummarizerAgent → structured summary")
+        summary = self.summarize_text(text)
+
+        record = self.save_to_library(source_name, stats, meta, analysis, summary)
+
+        result = {
+            "n_chunks": n_chunks, "text": text, "stats": stats,
+            "metadata": meta, "analysis": analysis, "summary": summary,
+            "gaps": None, "similar": [], "similar_query": "",
+            "literature_review": None, "final_report": None,
+        }
+        if not autonomous:
+            return result
+
+        step("🟢 GapAgent → detecting research gaps")
+        result["gaps"] = self.find_research_gaps([record])
+
+        step("🟢 SearchAgent → finding similar papers")
+        query = (meta.get("title") or source_name)
+        keywords = meta.get("keywords") or []
+        if isinstance(keywords, list) and keywords:
+            query = f"{meta.get('title', '')} {' '.join(keywords[:4])}".strip()
+        try:
+            result["similar"], result["similar_query"] = self.find_papers(
+                query, max_results=max_similar
+            )
+        except Exception:
+            result["similar"], result["similar_query"] = [], query
+
+        step("🟢 ReportAgent → generating literature review")
+        result["literature_review"] = self.generate_report("literature_review", [record])
+
+        step("🟢 Compiling final report")
+        result["final_report"] = self._compile_final_report(
+            record, result["gaps"], result["similar"], result["literature_review"]
+        )
+        return result
+
+    @staticmethod
+    def _compile_final_report(record, gaps, similar, literature_review):
+        """Assemble all pipeline outputs into one markdown report (no LLM call)."""
+        meta = record.get("metadata", {}) or {}
+        analysis = record.get("analysis", {}) or {}
+        authors = meta.get("authors") or []
+        if isinstance(authors, list):
+            authors = ", ".join(authors)
+        title = meta.get("title") or record.get("name", "Untitled")
+
+        lines = [f"# Research Report: {title}", ""]
+        lines += [
+            "## Metadata",
+            f"- **Authors:** {authors or '—'}",
+            f"- **Year:** {meta.get('year') or '—'}",
+            f"- **DOI:** {meta.get('doi') or '—'}",
+            f"- **Keywords:** {', '.join(meta.get('keywords') or []) or '—'}",
+            "",
+        ]
+        if record.get("summary"):
+            lines += ["## Summary", record["summary"], ""]
+
+        section_titles = {
+            "objectives": "Research Objectives",
+            "methodology": "Methodology, Algorithms & Techniques",
+            "datasets_tools": "Datasets, Tools & Experimental Setup",
+            "evaluation": "Evaluation Metrics & Results",
+            "limitations": "Limitations",
+            "future_work": "Future Work",
+        }
+        lines += ["## Detailed Analysis"]
+        for key, label in section_titles.items():
+            lines += [f"### {label}", analysis.get(key, "Not reported."), ""]
+
+        if gaps:
+            lines += ["## Research Gaps & Future Directions", gaps, ""]
+
+        if similar:
+            lines += ["## Similar Papers (from arXiv)"]
+            for p in similar:
+                lines.append(f"- **{p.get('title')}** ({p.get('published', 'n.d.')}) — {p.get('url')}")
+            lines.append("")
+
+        if literature_review:
+            lines += ["## Literature Review", literature_review, ""]
+
+        return "\n".join(lines)
+
     # --- Paper library / history ---
     def save_to_library(self, name, stats, metadata, analysis, summary):
         return self.library.add(name, stats, metadata, analysis, summary)

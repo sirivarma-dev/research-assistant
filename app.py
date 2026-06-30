@@ -173,6 +173,11 @@ defaults = {
     "gap_result": None,         # last research-gap analysis (markdown)
     "graph_html": None,         # last knowledge-graph HTML
     "report_result": None,      # last generated report: {"type":.., "title":.., "md":..}
+    "autonomous": True,         # run the full pipeline automatically on upload
+    "paper_gaps": None,         # auto-detected research gaps for the uploaded paper
+    "paper_similar": None,      # {"papers":[...], "query":..} similar papers (auto)
+    "paper_litreview": None,    # auto-generated literature review (markdown)
+    "paper_final_report": None, # compiled final report (markdown)
 }
 for key, value in defaults.items():
     st.session_state.setdefault(key, value)
@@ -232,6 +237,15 @@ with st.sidebar:
         value=st.session_state.allow_general,
         help="On: also answers everyday questions. Off: only answers from the "
              "uploaded paper and refuses off-topic questions.",
+    )
+
+    st.session_state.autonomous = st.toggle(
+        "🤖 Autonomous mode",
+        value=st.session_state.autonomous,
+        help="On: after you upload a paper, the system automatically runs the "
+             "whole pipeline — metadata, analysis, summary, research gaps, "
+             "similar papers, literature review, and a final report — with no "
+             "further clicks. Off: only the core analysis runs.",
     )
 
     if st.button("🧹 Clear chat history", use_container_width=True):
@@ -297,46 +311,50 @@ with tab1:
              "Scanned PDFs/images use OCR (needs Tesseract installed).",
     )
 
+    if st.session_state.autonomous:
+        st.caption("🤖 **Autonomous mode is ON** — one click runs the whole pipeline: "
+                   "metadata → analysis → summary → research gaps → similar papers → "
+                   "literature review → final report. (Toggle it off in the sidebar.)")
+
     if uploaded is not None:
-        if st.button("✨ Analyze paper", type="primary"):
+        btn_label = "🚀 Run autonomous research" if st.session_state.autonomous else "✨ Analyze paper"
+        if st.button(btn_label, type="primary"):
             save_path = os.path.join(UPLOAD_DIR, uploaded.name)
             with open(save_path, "wb") as f:
                 f.write(uploaded.getbuffer())
 
             try:
-                # Animated, multi-step status instead of a plain spinner
-                with st.status("Analyzing your paper...", expanded=True) as status:
-                    st.write("🟢 **ReaderAgent** → extracting text & indexing chunks...")
-                    n_chunks, text, stats = orch.ingest_paper(save_path, uploaded.name)
-                    st.write(
-                        f"📏 Detected a **{stats['label']}** paper "
-                        f"(~{stats['words']:,} words, {stats['pages']} pages)."
+                # Live agent status: each pipeline step reports through this callback.
+                with st.status("Running the research pipeline...", expanded=True) as status:
+                    def show_step(label):
+                        st.write(label)
+
+                    result = orch.run_pipeline(
+                        save_path, uploaded.name,
+                        on_step=show_step,
+                        autonomous=st.session_state.autonomous,
+                        max_similar=st.session_state.max_results,
                     )
-
-                    st.write("🟢 **MetadataAgent** → title, authors, year, DOI...")
-                    meta = orch.extract_metadata(text)
-
-                    st.write("🟢 **AnalysisAgent** → objectives, methods, results, limitations...")
-                    analysis = orch.analyze_paper(text)
-
-                    st.write("🟢 **SummarizerAgent** → writing a structured summary...")
-                    summary = orch.summarize_text(text)
-
                     status.update(
-                        label=f"Done! Indexed {n_chunks} chunks.",
+                        label=f"Done! Indexed {result['n_chunks']} chunks.",
                         state="complete", expanded=False,
                     )
 
-                # Save to session so it persists across tabs
+                # Save to session so everything persists across tabs.
                 st.session_state.paper_name = uploaded.name
-                st.session_state.n_chunks = n_chunks
-                st.session_state.paper_stats = stats
-                st.session_state.paper_meta = meta
-                st.session_state.paper_analysis = analysis
-                st.session_state.summary = summary
-                # Save into the persistent library (history + multi-paper features)
-                orch.save_to_library(uploaded.name, stats, meta, analysis, summary)
-                st.toast("Paper analyzed!", icon="✅")
+                st.session_state.n_chunks = result["n_chunks"]
+                st.session_state.paper_stats = result["stats"]
+                st.session_state.paper_meta = result["metadata"]
+                st.session_state.paper_analysis = result["analysis"]
+                st.session_state.summary = result["summary"]
+                st.session_state.paper_gaps = result["gaps"]
+                st.session_state.paper_similar = (
+                    {"papers": result["similar"], "query": result["similar_query"]}
+                    if result["similar"] else None
+                )
+                st.session_state.paper_litreview = result["literature_review"]
+                st.session_state.paper_final_report = result["final_report"]
+                st.toast("Research complete!", icon="✅")
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
@@ -399,6 +417,63 @@ with tab1:
         for key, label in ANALYSIS_SECTIONS.items():
             with st.expander(label):
                 st.markdown(analysis.get(key, "Not reported in the paper."))
+
+    # ---- Autonomous-pipeline outputs ----
+    # Research gaps (auto-detected)
+    if st.session_state.paper_gaps:
+        st.divider()
+        st.subheader("🔍 Research Gaps & Future Directions")
+        st.markdown(st.session_state.paper_gaps)
+
+    # Similar papers (auto-found)
+    sim = st.session_state.paper_similar
+    if sim and sim.get("papers"):
+        st.divider()
+        st.subheader("🔗 Similar Papers")
+        st.caption(f"Auto-search query: `{sim.get('query', '')}`")
+        for p in sim["papers"]:
+            st.markdown(
+                f"""
+                <div class='card'>
+                    <div class='paper-title'>{p['title']}</div>
+                    <div class='paper-meta'>👤 {p['authors']} &nbsp;·&nbsp; 📅 {p['published']}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"[📄 Open PDF]({p['url']})")
+
+    # Literature review (auto-generated)
+    if st.session_state.paper_litreview:
+        st.divider()
+        st.subheader("📚 Literature Review")
+        st.markdown(st.session_state.paper_litreview)
+
+    # Final compiled report + PDF download
+    if st.session_state.paper_final_report:
+        st.divider()
+        col_r1, col_r2 = st.columns([3, 1])
+        with col_r1:
+            st.subheader("📑 Final Report")
+            st.caption("Everything above, compiled into one document.")
+        with col_r2:
+            try:
+                pdf_bytes = markdown_to_pdf(
+                    f"Research Report — {st.session_state.paper_name}",
+                    st.session_state.paper_final_report,
+                )
+                st.download_button(
+                    "⬇️ Download PDF",
+                    data=pdf_bytes,
+                    file_name=safe_filename(st.session_state.paper_name).replace(".pdf", "")
+                    + "_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.caption(f"⚠️ PDF export failed: {e}")
+        with st.expander("📖 View the full compiled report"):
+            st.markdown(st.session_state.paper_final_report)
 
 # ---------------- TAB 2: Ask Questions ----------------
 with tab2:
