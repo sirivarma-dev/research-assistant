@@ -35,6 +35,9 @@ class ComparisonAgent(BaseAgent):
                 "Limitations, Future Work. Keep cells short.\n"
                 "2. A brief '### Key Similarities' section (bullet points).\n"
                 "3. A brief '### Key Differences' section (bullet points).\n"
+                "4. A '### Common Limitations' section listing weaknesses or open "
+                "problems that MORE THAN ONE of the papers share (write 'None in "
+                "common' if they don't overlap).\n"
                 "Be factual and grounded in the provided text. Do not invent details."
             ),
         )
