@@ -1,0 +1,8 @@
+# Streamlit theme for the Research Assistant.
+# Edit these colors to re-skin the whole app.
+[theme]
+primaryColor = "#7c5cff"            # accent (buttons, highlights)
+backgroundColor = "#0e1117"         # main background
+secondaryBackgroundColor = "#191c24" # cards / sidebar
+textColor = "#e6e6e6"
+font = "sans serif"

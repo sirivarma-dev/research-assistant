@@ -1,0 +1,15 @@
+streamlit
+groq
+arxiv
+pypdf
+chromadb
+python-dotenv
+python-docx
+python-pptx
+pymupdf
+pytesseract
+Pillow
+networkx
+pyvis
+fpdf2
+plotly
