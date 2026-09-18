@@ -24,5 +24,6 @@ class BaseAgent:
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
+            max_tokens=1000,
         )
         return response.choices[0].message.content.strip()

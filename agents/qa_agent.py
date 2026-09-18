@@ -59,6 +59,11 @@ class QAAgent(BaseAgent):
         q = question.lower()
         return any(hint in q for hint in self.REFERENCE_HINTS)
 
+    def _limit_context(self, context, max_chars=24000):
+        if len(context) > max_chars:
+            return context[:max_chars] + "\n[Context truncated]"
+        return context
+
     def answer(self, question, allow_general=True):
         has_paper = self.store.count() > 0
 
@@ -78,8 +83,9 @@ class QAAgent(BaseAgent):
             context = self.store.get_full_text()
         else:
             # Focused question: retrieve only the most relevant chunks (RAG).
-            context = "\n\n---\n\n".join(self.store.search(question, n_results=6))
+            context = "\n\n---\n\n".join(self.store.search(question, n_results=3))
 
+        context = self._limit_context(context)
         if allow_general:
             # Prefer the paper, but allow general-knowledge answers as a fallback.
             prompt = (
