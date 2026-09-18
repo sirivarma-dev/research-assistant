@@ -27,7 +27,7 @@ SEMANTIC_SCHOLAR_API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
 #   "meta-llama/llama-4-scout-17b-16e-instruct"     <-- newer Llama 4
 #   "openai/gpt-oss-120b"                            <-- powerful reasoning
 #   "llama-3.1-8b-instant"                           <-- fastest / lightest
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 # ---- Domain restriction ----
 # The message shown when a user asks something outside the research domain.
