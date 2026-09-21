@@ -16,6 +16,11 @@ knowledge graphs, and generate reports.
 - Generate **literature review / survey / gap / methodology** reports and
   **export to PDF**
 - **Dashboard** with research trends and citation insights
+## 🚀 Live Demo
+
+The project is deployed on Streamlit Community Cloud.
+
+**Live Application:** https://research-assistant-fcmrcuxzc7nvfllu97g2oz.streamlit.app/
 
 ## Run locally
 ```bash
